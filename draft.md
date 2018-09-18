@@ -104,3 +104,77 @@ __call_usermodehelper
             (const char __user *const __user *)sub_info->envp)
 
 ```
+
+#### MCELOG kernel space, default action
+```
+do_machine_check
+  mce_report_event
+    mce_notify_irq
+      schedule_work(&mce_trigger_work)
+    /*
+     * Triggering the work queue here is just an insurance
+     * policy in case the syscall exit notify handler
+     * doesn't run soon enough or ends up running on the
+     * wrong CPU (can happen when audit sleeps)
+     */
+    mce_schedule_work
+
+mce_schedule_work()
+      schedule_work(&mce_work)
+
+mcheck_init()
+  INIT_WORK(&mce_work, mce_process_work)
+
+mce_process_work
+  mce_gen_pool_process
+    atomic_notifier_call_chain(&x86_mce_decoder_chain, 0, mce)
+      __atomic_notifier_call_chain
+        notifier_call_chain
+          ret = nb->notifier_call(nb, val, v) <===> mce_cpu_callback()
+
+
+mcheck_init_device()
+   __register_hotcpu_notifier(&mce_cpu_notifier)
+
+static struct notifier_block mce_cpu_notifier = {
+    .notifier_call = mce_cpu_callback,
+}
+
+  /* Get notified when a cpu comes on/off. Be hotplug friendly. */
+  static int
+  mce_cpu_callback(struct notifier_block *nfb, unsigned long action, void *hcpu)
+  {
+          unsigned int cpu = (unsigned long)hcpu;
+          struct timer_list *t = &per_cpu(mce_timer, cpu);
+
+          switch (action & ~CPU_TASKS_FROZEN) {
+          case CPU_ONLINE:
+                  mce_device_create(cpu);
+                  if (threshold_cpu_callback)
+                          threshold_cpu_callback(action, cpu);
+                  break;
+          case CPU_DEAD:
+                  if (threshold_cpu_callback)
+                          threshold_cpu_callback(action, cpu);
+                  mce_device_remove(cpu);
+                  mce_intel_hcpu_update(cpu);
+
+                  /* intentionally ignoring frozen here */
+                  if (!(action & CPU_TASKS_FROZEN))
+                          cmci_rediscover();
+                  break;
+          case CPU_DOWN_PREPARE:
+                  smp_call_function_single(cpu, mce_disable_cpu, &action, 1);
+                  del_timer_sync(t);
+                  break;
+          case CPU_DOWN_FAILED:
+                  smp_call_function_single(cpu, mce_reenable_cpu, &action, 1);
+                  mce_start_timer(cpu, t);
+                  break;
+          }
+
+          return NOTIFY_OK;
+  }    
+
+
+```
