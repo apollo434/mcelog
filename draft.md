@@ -98,6 +98,42 @@ static void run_trigger(char *trigger, char *loc, unsigned long val,
 
 Based on my investigation so far, if call this run_trigger() function, there is not any other environment macro **variable**.      
 
+main
+  parse_config
+    config_options(options, combined_modifier)
+
+combined_modifier
+  diskdb_modifier
+
+    int diskdb_modifier(int opt)
+{
+        char *end;
+
+        switch (opt) {
+        case O_DATABASE:
+                dimm_db_fn = optarg;
+                checkdmi();
+                checkdimmdb();
+                break;
+        case O_ERROR_TRIGGER:
+                checkdmi();
+                open_dimm_db(dimm_db_fn);
+                error_thresh = strtoul(optarg, &end, 0);
+                if (end == optarg || *end != ',')
+                        usage();
+                error_trigger = end + 1;  
+                break;
+        default:
+                return 0;
+        }   
+        return 1;
+}
+
+end + 1 is the error_trigger name
+
+
+
+
 ```
 
 #### MCELOG kernel space
