@@ -53,6 +53,53 @@ main (mcelog.c)
 Why there are not any enviroment when mcelog trigger call the script shell, I think there are something wrong when transfer the third param named "env".
 
 ```
+
+```
+Another way to trigger a error
+
+dump_mce
+  diskdb_resolve_addr
+    new_error
+      run_trigger(trigger, loc, val, max_error)
+
+static void run_trigger(char *trigger, char *loc, unsigned long val,
+                        unsigned long max)
+{
+        pid_t pid;
+
+        Lprintf("Running error trigger because memory at %s had %lu errors\n",
+                loc, max);
+        close_dimm_db();
+        if ((pid = fork()) == 0) {
+                char valbuf[20], maxbuf[20];
+                char *argv[] = {
+                        trigger,
+                        loc,
+                        valbuf,
+                        maxbuf,
+                        NULL
+                };  
+                char *env[] = {
+                        "PATH=/sbin:/usr/bin",
+                        NULL
+                };  
+                sprintf(valbuf, "%lu", val);
+                sprintf(maxbuf, "%lu", max);
+                execve(trigger, argv, env);
+                _exit(1);
+        }
+        int status;
+        if (waitpid(pid, &status, 0) ||
+            !WIFEXITED(status) ||
+            WEXITSTATUS(status) != 0)
+                Eprintf("Cannot run error trigger %s for %s\n", trigger, loc);
+        open_dimm_db(NULL);
+}
+
+Based on my investigation so far, if call this run_trigger() function, there is not any other environment macro **variable**.      
+
+```
+
 #### MCELOG kernel space
 ```
 
@@ -130,7 +177,7 @@ mce_process_work
     atomic_notifier_call_chain(&x86_mce_decoder_chain, 0, mce)
       __atomic_notifier_call_chain
         notifier_call_chain
-          ret = nb->notifier_call(nb, val, v) <===> mce_cpu_callback()
+          ret = nb->notifier_call(nb, val, v) <===> mce_cpu_callback() or srao_decode_notifier()
 
 
 mcheck_init_device()
@@ -176,5 +223,67 @@ static struct notifier_block mce_cpu_notifier = {
           return NOTIFY_OK;
   }    
 
+  static int srao_decode_notifier(struct notifier_block *nb, unsigned long val,
+                                  void *data)
+  {
+          struct mce *mce = (struct mce *)data;
+          unsigned long pfn;
+
+          if (!mce)
+                  return NOTIFY_DONE;
+
+          if (mce->usable_addr && (mce->severity == MCE_AO_SEVERITY)) {
+                  pfn = mce->addr >> PAGE_SHIFT;
+                  memory_failure(pfn, MCE_VECTOR, 0);
+          }    
+
+          return NOTIFY_OK;
+  }
+  static struct notifier_block mce_srao_nb = {
+          .notifier_call  = srao_decode_notifier,
+          .priority = INT_MAX,
+  };
+
+/*
+ * Notifier chains are of four types:
+ *
+ *      Atomic notifier chains: Chain callbacks run in interrupt/atomic
+ *              context. Callouts are not allowed to block.
+ *      Blocking notifier chains: Chain callbacks run in process context.
+ *              Callouts are allowed to block.
+ *      Raw notifier chains: There are no restrictions on callbacks,
+ *              registration, or unregistration.  All locking and protection
+ *              must be provided by the caller.
+ *      SRCU notifier chains: A variant of blocking notifier chains, with
+ *              the same restrictions.
+ *
+ * atomic_notifier_chain_register() may be called from an atomic context,
+ * but blocking_notifier_chain_register() and srcu_notifier_chain_register()
+ * must be called from a process context.  Ditto for the corresponding
+ * _unregister() routines.
+ *
+ * atomic_notifier_chain_unregister(), blocking_notifier_chain_unregister(),
+ * and srcu_notifier_chain_unregister() _must not_ be called from within
+ * the call chain.
+ *
+ * SRCU notifier chains are an alternative form of blocking notifier chains.
+ * They use SRCU (Sleepable Read-Copy Update) instead of rw-semaphores for
+ * protection of the chain links.  This means there is _very_ low overhead
+ * in srcu_notifier_call_chain(): no cache bounces and no memory barriers.
+ * As compensation, srcu_notifier_chain_unregister() is rather expensive.
+ * SRCU notifier chains should be used when the chain will be called very
+ * often but notifier_blocks will seldom be removed.  Also, SRCU notifier
+ * chains are slightly more difficult to use because they require special
+ * runtime initialization.
+ */
+
+typedef int (*notifier_fn_t)(struct notifier_block *nb,
+                        unsigned long action, void *data);
+
+struct notifier_block {
+        notifier_fn_t notifier_call;
+        struct notifier_block __rcu *next;
+        int priority;
+};
 
 ```
