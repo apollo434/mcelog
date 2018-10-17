@@ -419,6 +419,24 @@ static __init int mcheck_init_device(void)
 device_initcall_sync(mcheck_init_device);
 
 
+The final record place:
+
+  /*
+   * Lockless MCE logging infrastructure.
+   * This avoids deadlocks on printk locks without having to break locks. Also
+   * separate MCEs from kernel messages to avoid bogus bug reports.
+   */
+
+  static struct mce_log mcelog = {
+          .signature      = MCE_LOG_SIGNATURE,
+          .len            = MCE_LOG_LEN,
+          .recordlen      = sizeof(struct mce),
+  };
+
+  void mce_log(struct mce *mce)
+
+
+
 ```
 
 #### MCELOG user space get the log from /dev/mcelog
