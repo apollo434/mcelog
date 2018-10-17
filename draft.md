@@ -372,6 +372,24 @@ static __init int mcheck_init_device(void)
 
           /* register character device /dev/mcelog */
           err = misc_register(&mce_chrdev_device); ===================>register character device /dev/mcelog
+>>>>
+  static const struct file_operations mce_chrdev_ops = {
+          .open                   = mce_chrdev_open,
+          .release                = mce_chrdev_release,
+          .read                   = mce_chrdev_read,
+          .write                  = mce_chrdev_write,
+          .poll                   = mce_chrdev_poll,
+          .unlocked_ioctl         = mce_chrdev_ioctl,
+          .llseek                 = no_llseek,
+  };
+
+  static struct miscdevice mce_chrdev_device = {
+          MISC_MCELOG_MINOR,
+          "mcelog",
+          &mce_chrdev_ops,
+  };
+
+>>>>          
           if (err)
                   goto err_register;
 
