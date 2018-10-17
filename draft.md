@@ -329,6 +329,78 @@ do_machine_check
   mce_gather_info
     mce_setup(m)
 
+static __init int mcheck_init_device(void)
+  {
+          int err;
+          int i = 0;
+
+          if (!mce_available(&boot_cpu_data)) {
+                  err = -EIO;
+                  goto err_out;
+          }
+
+          if (!zalloc_cpumask_var(&mce_device_initialized, GFP_KERNEL)) {
+                  err = -ENOMEM;
+                  goto err_out;
+          }
+
+          mce_init_banks();
+
+          err = subsys_system_register(&mce_subsys, NULL);
+          if (err)
+                  goto err_out_mem;
+
+          cpu_notifier_register_begin();
+          for_each_online_cpu(i) {
+                  err = mce_device_create(i);
+                  if (err) {
+                          /*
+                           * Register notifier anyway (and do not unreg it) so
+                           * that we don't leave undeleted timers, see notifier
+                           * callback above.
+                           */
+                          __register_hotcpu_notifier(&mce_cpu_notifier);
+                          cpu_notifier_register_done();
+                          goto err_device_create;
+                  }
+          }
+
+          __register_hotcpu_notifier(&mce_cpu_notifier);
+          cpu_notifier_register_done();
+
+          register_syscore_ops(&mce_syscore_ops);
+
+          /* register character device /dev/mcelog */
+          err = misc_register(&mce_chrdev_device); ===================>register character device /dev/mcelog
+          if (err)
+                  goto err_register;
+
+          return 0;
+
+  err_register:
+          unregister_syscore_ops(&mce_syscore_ops);
+
+  err_device_create:
+          /*
+           * We didn't keep track of which devices were created above, but
+           * even if we had, the set of online cpus might have changed.
+           * Play safe and remove for every possible cpu, since
+           * mce_device_remove() will do the right thing.
+           */
+          for_each_possible_cpu(i)
+                  mce_device_remove(i);
+
+  err_out_mem:
+          free_cpumask_var(mce_device_initialized);
+
+  err_out:
+          pr_err("Unable to init device /dev/mcelog (rc: %d)\n", err);
+
+          return err;
+  }
+device_initcall_sync(mcheck_init_device);
+
+
 ```
 
 #### MCELOG user space get the log from /dev/mcelog
