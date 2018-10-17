@@ -418,7 +418,7 @@ static __init int mcheck_init_device(void)
   }
 device_initcall_sync(mcheck_init_device);
 
-
+====================================================================================
 The final record place:
 
   /*
@@ -435,6 +435,21 @@ The final record place:
 
   void mce_log(struct mce *mce)
 
+====================================================================================
+/*        
+ * This structure contains all data related to the MCE log.  Also
+ * carries a signature to make it easier to find from external
+ * debugging tools.  Each entry is only valid when its finished flag
+ * is set.
+ */
+struct mce_log {          
+        char signature[12]; /* "MACHINECHECK" */
+        unsigned len;       /* = MCE_LOG_LEN */
+        unsigned next;
+        unsigned flags;
+        unsigned recordlen;     /* length of struct mce */
+        struct mce entry[MCE_LOG_LEN];
+};  
 
 
 ```
