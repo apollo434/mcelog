@@ -323,3 +323,11 @@ struct notifier_block {
 };
 
 ```
+#### MCELOG mce Init
+```
+do_machine_check
+  mce_gather_info
+    mce_setup(m)
+
+
+```
