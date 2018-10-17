@@ -329,5 +329,36 @@ do_machine_check
   mce_gather_info
     mce_setup(m)
 
+```
+
+#### MCELOG user space get the log from /dev/mcelog
+```
+  static const struct file_operations mce_chrdev_ops = {
+          .open                   = mce_chrdev_open,
+          .release                = mce_chrdev_release,
+          .read                   = mce_chrdev_read,
+          .write                  = mce_chrdev_write,
+          .poll                   = mce_chrdev_poll,
+          .unlocked_ioctl         = mce_chrdev_ioctl,
+          .llseek                 = no_llseek,
+  };
+
+Corresponding to user space:
+
+main()
+{
+  ....
+fd = open(logfn, O_RDONLY);
+ioctl(fd, MCE_GET_RECORD_LEN, &d.recordlen)
+ioctl(fd, MCE_GET_LOG_LEN, &d.loglen)
+  ....
+}
+
+process()
+{
+  ....
+  len = read(fd, buf, recordlen * loglen)
+  ....
+}
 
 ```
